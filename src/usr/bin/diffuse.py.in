@@ -860,6 +860,7 @@ class Preferences:
             [ 'List',
               [ 'Integer', 'tabs_default_panes', 2, _('Default panes'), 2, 16 ],
               [ 'Boolean', 'tabs_always_show', False, _('Always show the tab bar') ],
+              [ 'Boolean', 'tabs_reload_automatically', False, _('Reload external changes without prompt') ],
               [ 'Boolean', 'tabs_warn_before_quit', True, _('Warn me when closing a tab will quit %s') % APP_NAME ]
             ],
             _('Regional Settings'),
@@ -7181,30 +7182,6 @@ class Diffuse(Gtk.Window):
         def reload_file_cb(self, widget, data):
             self.open_file(self.current_pane, True)
 
-        # check changes to files on disk when receiving keyboard focus
-        def focus_in(self, widget, event):
-            for f, h in enumerate(self.headers):
-                info = h.info
-                try:
-                    if info.last_stat is not None:
-                        info = h.info
-                        new_stat = os.stat(info.name)
-                        if info.last_stat[stat.ST_MTIME] < new_stat[stat.ST_MTIME]:
-                            # update our notion of the most recent modification
-                            info.last_stat = new_stat
-                            if info.label is not None:
-                                s = info.label
-                            else:
-                                s = info.name
-                            msg = _('The file %s changed on disk.  Do you want to reload the file?') % (s, )
-                            dialog = MessageDialog(self.get_toplevel(), Gtk.MessageType.QUESTION, msg)
-                            ok = (dialog.run() == Gtk.ResponseType.OK)
-                            dialog.destroy()
-                            if ok:
-                                self.open_file(f, True)
-                except OSError:
-                    pass
-
         # save contents of pane 'f' to file
         def save_file(self, f, save_as=False):
             h = self.headers[f]
@@ -7616,11 +7593,46 @@ class Diffuse(Gtk.Window):
         vbox.show()
         self.connect('focus-in-event', self.focus_in_cb)
 
-    # notifies all viewers on focus changes so they may check for external
-    # changes to files
+    # check changes to files on disk when receiving keyboard focus
     def focus_in_cb(self, widget, event):
+        changed = []
         for i in range(self.notebook.get_n_pages()):
-            self.notebook.get_nth_page(i).focus_in(widget, event)
+            page = self.notebook.get_nth_page(i)
+            for f, h in enumerate(page.headers):
+                info = h.info
+                try:
+                    if info.last_stat is not None:
+                        info = h.info
+                        new_stat = os.stat(info.name)
+                        if info.last_stat[stat.ST_MTIME] < new_stat[stat.ST_MTIME]:
+                            # update our notion of the most recent modification
+                            info.last_stat = new_stat
+                            if info.label is not None:
+                                s = info.label
+                            else:
+                                s = info.name
+                            changed.append((page, f, s))
+                except OSError:
+                    pass
+        if changed:
+            if self.prefs.getBool('tabs_reload_automatically'):
+                for page, f, s in changed:
+                    page.open_file(f, True)
+            else:
+                if len(changed) == 1:
+                    (page, f, s), = changed
+                    msg = _('The file %s changed on disk. Do you want to reload the file?') % (s, )
+                else:
+                    msg = _('The following files changed on disk:\n%s\n\nDo you want to reload these files?') % ('\n'.join(s for page, f, s in changed), )
+                dialog = Gtk.MessageDialog(self, Gtk.DialogFlags.DESTROY_WITH_PARENT, Gtk.MessageType.QUESTION, Gtk.ButtonsType.NONE, msg)
+                dialog.add_button(Gtk.STOCK_NO, Gtk.ResponseType.REJECT)
+                dialog.add_button(Gtk.STOCK_YES, Gtk.ResponseType.OK)
+                dialog.set_default_response(Gtk.ResponseType.OK)
+                ok = (dialog.run() == Gtk.ResponseType.OK)
+                dialog.destroy()
+                if ok:
+                    for page, f, s in changed:
+                        page.open_file(f, True)
 
     # record the window's position and size
     def configure_cb(self, widget, event):
