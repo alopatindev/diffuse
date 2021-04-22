@@ -7631,7 +7631,7 @@ class Diffuse(Gtk.Window):
                     msg = _('The file %s changed on disk. Do you want to reload the file?') % (s, )
                 else:
                     msg = _('The following files changed on disk:\n%s\n\nDo you want to reload these files?') % ('\n'.join(s for page, f, s in changed), )
-                dialog = Gtk.MessageDialog(self, Gtk.DialogFlags.DESTROY_WITH_PARENT, Gtk.MessageType.QUESTION, Gtk.ButtonsType.NONE, msg)
+                dialog = Gtk.MessageDialog(parent=self, message_type=Gtk.MessageType.QUESTION, text=msg, destroy_with_parent=True)
                 dialog.add_button(Gtk.STOCK_NO, Gtk.ResponseType.REJECT)
                 dialog.add_button(Gtk.STOCK_YES, Gtk.ResponseType.OK)
                 dialog.set_default_response(Gtk.ResponseType.OK)
