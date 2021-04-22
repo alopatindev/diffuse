@@ -6919,6 +6919,19 @@ class Diffuse(Gtk.Window):
                     self.has_edits = has_edits
                     self.updateTitle()
 
+            # Has the file on disk changed since last time it was loaded?
+            def has_file_changed_on_disk(self):
+                if self.info.last_stat is not None:
+                    try:
+                        new_stat = os.stat(self.info.name)
+                        if self.info.last_stat[stat.ST_MTIME] < new_stat[stat.ST_MTIME]:
+                            # update our notion of the most recent modification
+                            self.info.last_stat = new_stat
+                            return True
+                    except OSError:
+                        return False
+                return False
+
         # pane footer
         class PaneFooter(Gtk.Box):
             def __init__(self):
@@ -7606,31 +7619,23 @@ class Diffuse(Gtk.Window):
         for i in range(self.notebook.get_n_pages()):
             page = self.notebook.get_nth_page(i)
             for f, h in enumerate(page.headers):
-                info = h.info
-                try:
-                    if info.last_stat is not None:
-                        info = h.info
-                        new_stat = os.stat(info.name)
-                        if info.last_stat[stat.ST_MTIME] < new_stat[stat.ST_MTIME]:
-                            # update our notion of the most recent modification
-                            info.last_stat = new_stat
-                            if info.label is not None:
-                                s = info.label
-                            else:
-                                s = info.name
-                            changed.append((page, f, s))
-                except OSError:
-                    pass
+                if h.has_file_changed_on_disk():
+                    changed.append((page, f))
+
         if changed:
             if self.prefs.getBool('tabs_reload_automatically'):
-                for page, f, s in changed:
+                for page, f in changed:
                     page.open_file(f, True)
             else:
-                if len(changed) == 1:
-                    (page, f, s), = changed
-                    msg = _('The file %s changed on disk. Do you want to reload the file?') % (s, )
+                filenames = []
+                for (page, f) in changed:
+                    h = page.headers[f]
+                    filename = h.info.label if h.info.label is not None else h.info.name
+                    filenames.append(filename)
+                if len(filenames) == 1:
+                    msg = _('The file %s changed on disk. Do you want to reload the file?') % (filenames[0], )
                 else:
-                    msg = _('The following files changed on disk:\n%s\n\nDo you want to reload these files?') % ('\n'.join(s for page, f, s in changed), )
+                    msg = _('The following files changed on disk:\n%s\n\nDo you want to reload these files?') % ('\n'.join(filename for filename in filenames), )
                 dialog = Gtk.MessageDialog(parent=self, message_type=Gtk.MessageType.QUESTION, text=msg, destroy_with_parent=True)
                 dialog.add_button(Gtk.STOCK_NO, Gtk.ResponseType.REJECT)
                 dialog.add_button(Gtk.STOCK_YES, Gtk.ResponseType.OK)
@@ -7638,7 +7643,7 @@ class Diffuse(Gtk.Window):
                 ok = (dialog.run() == Gtk.ResponseType.OK)
                 dialog.destroy()
                 if ok:
-                    for page, f, s in changed:
+                    for page, f in changed:
                         page.open_file(f, True)
 
     # record the window's position and size
